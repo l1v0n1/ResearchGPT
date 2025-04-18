@@ -1,5 +1,5 @@
 """
-AI Research Agent package.
+ResearchGPT package.
 """
 
 __version__ = "0.1.0" 

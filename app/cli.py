@@ -1,5 +1,5 @@
 """
-Command-line interface for the AI Research Agent.
+Command-line interface for ResearchGPT.
 """
 import os
 import sys
