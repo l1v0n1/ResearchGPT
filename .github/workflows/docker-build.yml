@@ -1,0 +1,39 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: false
+        tags: researchgpt:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Verify Docker image
+      run: |
+        # Create an .env file for testing
+        cp .env.example .env
+        echo "OPENAI_API_KEY=sk-test-dummy-key-for-testing" >> .env
+        
+        # Run the container with --help to verify it starts correctly
+        docker run --rm --env-file .env researchgpt:test --help
+        
+        # Additional validation could be added here
+        echo "Docker image verification complete" 
