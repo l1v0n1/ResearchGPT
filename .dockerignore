@@ -1,0 +1,25 @@
+# Directories
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+.venv/
+.env
+venv/
+.git/
+.github/
+.pytest_cache/
+tests/
+benchmarks/
+
+# Files
+*.pyc
+*.pyo
+*.pyd
+.Python
+.DS_Store
+*.log
+*.sqlite
+*.db
+
+# Keep these explicitly
+!.env.example 

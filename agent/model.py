@@ -1,12 +1,15 @@
 """
-OpenAI model wrapper for the AI Research Agent.
+Ollama model wrapper for the AI Research Agent.
 """
 import time
 import json
+import requests # Use requests for HTTP calls
 from typing import Dict, List, Any, Optional, Union, Tuple
 
-import openai
-from openai import OpenAI
+# No longer using openai library
+# import openai
+# from openai import OpenAI
+
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -19,112 +22,153 @@ from agent.logger import AgentLogger
 
 logger = AgentLogger(__name__)
 
+# Define exceptions for Ollama
+class OllamaError(Exception):
+    """Base exception for Ollama API errors."""
+    pass
+
+class OllamaConnectionError(OllamaError):
+    """Exception for connection issues with the Ollama server."""
+    pass
+
+class OllamaResponseError(OllamaError):
+    """Exception for non-200 responses from the Ollama API."""
+    def __init__(self, status_code, message):
+        self.status_code = status_code
+        super().__init__(f"Ollama API request failed with status {status_code}: {message}")
+
 class ModelAPIWrapper:
     """
-    A wrapper for the OpenAI API that handles requests, retries, and rate limits.
+    A wrapper for the Ollama API that handles requests, retries, and basic processing.
+    Uses the /api/chat endpoint.
     """
     
     def __init__(self):
         """
-        Initialize the OpenAI API client with credentials from config.
+        Initialize the Ollama API wrapper with settings from config.
         """
-        # Configure OpenAI API
-        self.client = OpenAI(
-            api_key=config.OPENAI_API_KEY,
-            organization=config.OPENAI_ORGANIZATION
-        )
-        
-        # Default parameters
-        self.model = config.MODEL_NAME
-        self.max_tokens = config.MAX_TOKENS
+        self.base_url = config.OLLAMA_BASE_URL
+        self.chat_endpoint = f"{self.base_url}/api/chat"
+        self.model = config.OLLAMA_MODEL
         self.temperature = config.TEMPERATURE
-        
-        # Rate limiting
+        self.request_timeout = config.OLLAMA_REQUEST_TIMEOUT
+        self.max_tokens = config.MAX_TOKENS # Keep for potential context management
+
+        # Rate limiting (optional for local Ollama, but kept for structure)
         self.request_count = 0
         self.request_start_time = time.time()
         self.rate_limit = config.API_RATE_LIMIT
         
-        logger.info(f"Initialized ModelAPIWrapper with model {self.model}")
+        logger.info(f"Initialized ModelAPIWrapper for Ollama model {self.model} at {self.base_url}")
     
     def _check_rate_limit(self):
         """
         Check if the current request would exceed the rate limit.
         If necessary, sleep to stay within rate limits.
+        (Less critical for local Ollama, adjust self.rate_limit in config)
         """
         current_time = time.time()
         elapsed = current_time - self.request_start_time
         
-        # Reset counter after 60 seconds
         if elapsed >= 60:
             self.request_count = 0
             self.request_start_time = current_time
             return
         
-        # If we're at the rate limit, sleep until the minute is up
         if self.request_count >= self.rate_limit:
             sleep_time = 60 - elapsed
-            logger.warning(f"Rate limit reached. Sleeping for {sleep_time:.2f} seconds")
+            logger.warning(f"Rate limit ({self.rate_limit}/min) reached. Sleeping for {sleep_time:.2f} seconds")
             time.sleep(sleep_time)
             self.request_count = 0
             self.request_start_time = time.time()
         
     @retry(
-        retry=retry_if_exception_type((
-            openai.RateLimitError,
-            openai.APITimeoutError,
-            openai.APIConnectionError
-        )),
-        wait=wait_exponential(multiplier=1, min=2, max=60),
-        stop=stop_after_attempt(5)
+        retry=retry_if_exception_type((requests.exceptions.ConnectionError, OllamaConnectionError, OllamaResponseError)),
+        wait=wait_exponential(multiplier=1, min=2, max=30), # Shorter max wait for local
+        stop=stop_after_attempt(3) # Fewer attempts for local
     )
-    def _call_api(self, messages: List[Dict[str, str]], **kwargs) -> Dict[str, Any]:
+    def _call_api(self, messages: List[Dict[str, str]], format_json: bool = False, **kwargs) -> Dict[str, Any]:
         """
-        Make a request to the OpenAI API with retry logic.
+        Make a request to the Ollama /api/chat endpoint with retry logic.
         
         Args:
-            messages: A list of message dictionaries for the conversation
-            **kwargs: Additional parameters to pass to the API
+            messages: A list of message dictionaries for the conversation.
+            format_json: If True, requests JSON format from Ollama.
+            **kwargs: Additional parameters for the Ollama API.
             
         Returns:
-            The API response as a dictionary
+            The Ollama API response content as a dictionary.
+            
+        Raises:
+            OllamaConnectionError: If connection to Ollama fails.
+            OllamaResponseError: If Ollama returns a non-200 status code.
         """
-        # Check rate limit before making request
-        self._check_rate_limit()
-        
-        # Track request for rate limiting
+        self._check_rate_limit() 
         self.request_count += 1
-        
-        # Get start time for logging
         start_time = time.time()
-        
+
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "model": kwargs.get("model", self.model),
+            "messages": messages,
+            "stream": False, # Don't stream for this wrapper
+            "options": {
+                "temperature": kwargs.get("temperature", self.temperature),
+                # Add other Ollama options if needed (e.g., num_ctx for context window)
+                # "num_ctx": self.max_tokens 
+            }
+        }
+
+        if format_json:
+            payload["format"] = "json"
+
+        logger.debug(f"Sending request to Ollama: {json.dumps(payload, indent=2)}")
+
         try:
-            response = self.client.chat.completions.create(
-                model=kwargs.get("model", self.model),
-                messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
-                temperature=kwargs.get("temperature", self.temperature),
-                n=kwargs.get("n", 1),
-                stream=kwargs.get("stream", False)
+            response = requests.post(
+                self.chat_endpoint,
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=self.request_timeout
             )
             
-            # Log successful request
             elapsed = time.time() - start_time
-            tokens_used = response.usage.total_tokens
-            logger.debug(
-                f"API request successful",
-                elapsed_time=f"{elapsed:.2f}s",
-                tokens=tokens_used
-            )
-            
-            # Convert to dict for consistent handling
-            response_dict = response.model_dump()
-            return response_dict
-            
-        except Exception as e:
-            # Log the error
+
+            if response.status_code == 200:
+                response_data = response.json()
+                tokens_used = response_data.get("eval_count", 0) # Ollama uses eval_count
+                logger.debug(
+                    f"Ollama request successful",
+                    elapsed_time=f"{elapsed:.2f}s",
+                    tokens_evaluated=tokens_used
+                )
+                return response_data
+            else:
+                error_msg = response.text
+                try: # Try to parse JSON error
+                    error_json = response.json()
+                    error_msg = error_json.get("error", response.text)
+                except json.JSONDecodeError:
+                    pass # Keep original text if not JSON
+                    
+                logger.error(
+                    f"Ollama request failed with status {response.status_code}: {error_msg}",
+                    elapsed_time=f"{elapsed:.2f}s"
+                )
+                raise OllamaResponseError(response.status_code, error_msg)
+                
+        except requests.exceptions.RequestException as e:
             elapsed = time.time() - start_time
             logger.error(
-                f"API request failed: {str(e)}",
+                f"Ollama connection failed: {str(e)}",
+                elapsed_time=f"{elapsed:.2f}s",
+                error_type=type(e).__name__
+            )
+            raise OllamaConnectionError(f"Connection error: {str(e)}") from e
+        except Exception as e: # Catch other potential errors
+            elapsed = time.time() - start_time
+            logger.error(
+                f"Unexpected error during Ollama request: {str(e)}",
                 elapsed_time=f"{elapsed:.2f}s",
                 error_type=type(e).__name__
             )
@@ -138,48 +182,59 @@ class ModelAPIWrapper:
         **kwargs
     ) -> str:
         """
-        Generate text using the OpenAI chat completions API.
+        Generate text using the Ollama chat completions API.
         
         Args:
-            prompt: The user prompt to send to the model
-            system_message: Optional system message to set context
-            conversation_history: Optional conversation history
-            **kwargs: Additional parameters to pass to the API
+            prompt: The user prompt to send to the model.
+            system_message: Optional system message to set context.
+            conversation_history: Optional conversation history.
+            **kwargs: Additional parameters to pass to the Ollama API.
             
         Returns:
-            The generated text as a string
+            The generated text as a string.
         """
-        # Construct messages array
         messages = []
         
-        # Add system message if provided
         if system_message:
             messages.append({"role": "system", "content": system_message})
         else:
-            # Use default system message based on agent objective
-            messages.append({
-                "role": "system",
-                "content": (
-                    f"You are {config.AGENT_NAME}. "
-                    f"Your objective is to {config.AGENT_OBJECTIVE} "
-                    f"{config.AGENT_DESCRIPTION}"
-                )
-            })
+            # Add a default system message with date check
+            current_year = time.strftime("%Y")
+            current_date = time.strftime("%B %d, %Y")
+            
+            date_reminder = f"Today's date is {current_date}. When discussing 'latest' or recent news, " \
+                           f"ensure all dates referenced are accurate and not in the future. Always use " \
+                           f"the current year ({current_year}) for recent events unless explicitly specified otherwise."
+            
+            default_system = f"""You are {config.AGENT_NAME}. 
+            Your objective is to {config.AGENT_OBJECTIVE} 
+            {config.AGENT_DESCRIPTION}
+            
+            IMPORTANT: {date_reminder}"""
+            
+            messages.append({"role": "system", "content": default_system})
         
-        # Add conversation history if provided
         if conversation_history:
             messages.extend(conversation_history)
         
-        # Add user prompt
         messages.append({"role": "user", "content": prompt})
         
-        # Call the API
-        response = self._call_api(messages, **kwargs)
-        
-        # Extract the generated text
-        generated_text = response["choices"][0]["message"]["content"]
-        
-        return generated_text
+        try:
+            response_data = self._call_api(messages, format_json=False, **kwargs)
+            
+            # Extract the generated text from Ollama response
+            # Ollama's chat response format has the content in response['message']['content']
+            generated_text = response_data.get("message", {}).get("content", "")
+            
+            if not generated_text:
+                 logger.warning("Ollama response did not contain generated text.", response=response_data)
+            
+            return generated_text.strip()
+            
+        except (OllamaError, Exception) as e:
+            logger.error(f"Failed to generate text with Ollama: {str(e)}")
+            # Return empty string or raise exception based on desired handling
+            return "" 
     
     def generate_json(
         self,
@@ -188,47 +243,55 @@ class ModelAPIWrapper:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate structured JSON output using the OpenAI chat completions API.
+        Generate structured JSON output using Ollama. 
+        Note: Relies on the model's ability to follow JSON instructions and Ollama's format=json.
         
         Args:
-            prompt: The user prompt to send to the model
-            system_message: Optional system message to set context
-            **kwargs: Additional parameters to pass to the API
+            prompt: The user prompt to send to the model.
+            system_message: Optional system message to set context.
+            **kwargs: Additional parameters to pass to the Ollama API.
             
         Returns:
-            The generated content as a Python dictionary
+            The generated content as a Python dictionary, or {} if parsing fails.
         """
-        # If no system message is provided, create one that requests JSON output
         if system_message is None:
             system_message = (
                 f"You are {config.AGENT_NAME}. "
                 f"Your objective is to {config.AGENT_OBJECTIVE} "
                 f"{config.AGENT_DESCRIPTION} "
-                f"Respond with valid JSON only, no explanations or other text."
+                f"Respond ONLY with valid JSON. Do not include any other text, explanations, or markdown formatting." 
             )
         
-        # Generate text with the JSON format instruction
-        response_text = self.generate_text(
-            prompt=prompt + "\nRespond with valid JSON only.",
-            system_message=system_message,
-            **kwargs
-        )
+        # Add explicit instruction for JSON in the user prompt as well
+        json_prompt = prompt + "\n\nRespond ONLY with valid JSON. The entire response must be a single JSON object."
         
-        # Parse the response as JSON
+        messages = []
+        messages.append({"role": "system", "content": system_message})
+        messages.append({"role": "user", "content": json_prompt})
+        
         try:
-            # Handle case where the model wraps the JSON in code blocks
-            if response_text.startswith("```json"):
-                response_text = response_text.split("```json")[1]
-            if response_text.endswith("```"):
-                response_text = response_text.split("```")[0]
+            # Request JSON format from Ollama
+            response_data = self._call_api(messages, format_json=True, **kwargs)
+            response_text = response_data.get("message", {}).get("content", "")
+
+            if not response_text:
+                logger.error("Ollama JSON response was empty.")
+                return {}
             
-            # Strip any non-JSON text around the response
-            response_text = response_text.strip()
-            
-            return json.loads(response_text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {str(e)}")
-            logger.debug(f"Raw response: {response_text}")
-            
-            # Return empty dict as fallback
+            # Parse the response text as JSON
+            # Ollama's format=json should ideally return only JSON, but parse defensively
+            try:
+                # Sometimes models still wrap in ```json ... ``` despite instructions
+                if response_text.startswith("```json"):
+                    response_text = response_text.split("```json", 1)[1]
+                if response_text.endswith("```"):
+                    response_text = response_text.rsplit("```", 1)[0]
+                
+                return json.loads(response_text.strip())
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Ollama JSON response: {str(e)}", raw_response=response_text)
+                return {}
+                
+        except (OllamaError, Exception) as e:
+            logger.error(f"Failed to generate JSON with Ollama: {str(e)}")
             return {} 

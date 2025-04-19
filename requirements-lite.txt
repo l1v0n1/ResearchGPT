@@ -1,0 +1,22 @@
+# Core dependencies
+langchain>=0.3.23
+langchain-community>=0.3.21
+langchain-core>=0.3.54
+langchain-ollama>=0.3.2
+requests>=2.32.3
+beautifulsoup4>=4.13.4
+markdown>=3.5.2
+pypdf>=5.4.0
+python-magic>=0.4.27
+pygments>=2.19.1
+
+# Environment and utilities
+python-dotenv>=1.1.0
+pydantic>=2.11.3
+tqdm>=4.67.1
+numpy>=2.2.4
+loguru>=0.7.3
+rich>=14.0.0
+
+# Web servers
+flask>=3.1.0 

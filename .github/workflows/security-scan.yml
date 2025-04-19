@@ -10,15 +10,43 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
-    - name: Build Docker image
-      run: docker build -t researchgpt:latest .
+    - name: Build Docker images
+      run: |
+        docker build -t researchgpt:lite -f Dockerfile.lite .
+        docker build -t researchgpt:alpine -f Dockerfile .
+        docker build -t researchgpt:debian -f Dockerfile.debian .
     
-    - name: Run Trivy vulnerability scanner
+    - name: Run Trivy vulnerability scanner (Lite)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: 'researchgpt:latest'
+        image-ref: 'researchgpt:lite'
         format: 'table'
         exit-code: '0'  # Don't fail workflow, just report
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Run Trivy vulnerability scanner (Alpine)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'researchgpt:alpine'
+        format: 'table'
+        exit-code: '0'  # Don't fail workflow, just report
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Run Trivy vulnerability scanner (Debian)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'researchgpt:debian'
+        format: 'table'
+        exit-code: '0'  # Don't fail workflow, just report
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Scan Python Dependencies
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'table'
+        exit-code: '0'
         severity: 'CRITICAL,HIGH' 

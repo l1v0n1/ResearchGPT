@@ -2,6 +2,9 @@
 Executor module for the AI Research Agent.
 """
 from typing import Dict, List, Any, Optional, Union, Tuple
+import re
+from pathlib import Path
+import time
 
 from agent import config
 from agent.model import ModelAPIWrapper
@@ -121,9 +124,15 @@ class Executor:
             
         elif action == "fetch_webpage":
             url = params.get("url", "")
-            logger.info(f"Fetching webpage: {url}")
-            page = self.web_tool.fetch_page(url)
-            return page.dict() if page else None
+            # Check if this is actually a local file reference
+            if self._is_local_file_reference(url):
+                file_path = self._extract_file_path(url)
+                logger.info(f"Treating URL as local file: {file_path}")
+                return self._get_document_as_webpage(file_path)
+            else:
+                logger.info(f"Fetching webpage: {url}")
+                page = self.web_tool.fetch_page(url)
+                return page.dict() if page else None
             
         elif action == "extract_links":
             url = params.get("url", "")
@@ -133,8 +142,25 @@ class Executor:
         elif action == "extract_text":
             url = params.get("url", "")
             selector = params.get("selector", "")
-            logger.info(f"Extracting text from {url} with selector '{selector}'")
-            return self.web_tool.extract_text_with_selector(url, selector)
+            
+            # Check if this is actually a local file reference
+            if self._is_local_file_reference(url):
+                file_path = self._extract_file_path(url)
+                logger.info(f"Extracting text from local file: {file_path}")
+                doc = self.doc_tool.get_document(file_path)
+                if doc:
+                    return doc.content
+                else:
+                    # Try indexing the file first if it's not already indexed
+                    logger.info(f"File not indexed, attempting to index: {file_path}")
+                    doc_id = self.doc_tool.index_document(file_path)
+                    if doc_id:
+                        doc = self.doc_tool.get_document(doc_id)
+                        return doc.content if doc else None
+                    return None
+            else:
+                logger.info(f"Extracting text from {url} with selector '{selector}'")
+                return self.web_tool.extract_text_with_selector(url, selector)
             
         elif action == "search_documents":
             query = params.get("query", "")
@@ -145,7 +171,7 @@ class Executor:
         elif action == "get_document_summary":
             file_path = params.get("file_path", "")
             logger.info(f"Getting summary of document: {file_path}")
-            return self.doc_tool.get_document_summary(file_path)
+            return self.doc_tool.get_document(file_path)
             
         elif action == "generate_summary":
             # This is handled separately at the end of plan execution
@@ -162,6 +188,188 @@ class Executor:
         else:
             logger.warning(f"Unknown action: {action}")
             return None
+    
+    def _is_local_file_reference(self, url: str) -> bool:
+        """
+        Check if a URL is likely a reference to a local file.
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            True if URL appears to reference a local file
+        """
+        # Check for URL schemes that definitely indicate web resources
+        if url.startswith(('http://', 'https://', 'ftp://')):
+            # Check if the URL contains common file patterns despite having a web scheme
+            file_patterns = [
+                r'/([^/]+\.txt)$',
+                r'/([^/]+\.pdf)$',
+                r'/([^/]+\.md)$',
+                r'/([^/]+\.json)$',
+                r'/([^/]+\.csv)$',
+                r'/([^/]+\.docx?)$'
+            ]
+            
+            for pattern in file_patterns:
+                match = re.search(pattern, url)
+                if match:
+                    filename = match.group(1)
+                    # Check if this file exists locally in common directories
+                    search_dirs = ['documents', 'data', 'test_data', '.']
+                    for directory in search_dirs:
+                        if Path(directory) / filename.lower() in list(Path(directory).glob('*')) or \
+                           Path(directory) / filename in list(Path(directory).glob('*')):
+                            return True
+            
+            # If no local file found, it's a web URL
+            return False
+        
+        # If it's a local file path, treat it as a file
+        return True
+    
+    def _extract_file_path(self, url: str) -> str:
+        """
+        Extract the file path from a URL or path string.
+        
+        Args:
+            url: The URL or path to extract from
+            
+        Returns:
+            The extracted file path
+        """
+        # If it's already a file path without URL scheme, return it
+        if not url.startswith(('http://', 'https://', 'ftp://', 'file://')):
+            # Check if it exists as is
+            if Path(url).exists():
+                return url
+                
+            # Check in known directories
+            search_dirs = ['documents', 'data', 'test_data', '.']
+            for directory in search_dirs:
+                potential_path = Path(directory) / Path(url).name
+                if potential_path.exists():
+                    logger.info(f"Found file at: {potential_path}")
+                    return str(potential_path)
+            
+            return url
+            
+        # Handle file:// URLs
+        if url.startswith('file://'):
+            # Remove the file:// prefix
+            file_path = url[7:]
+            
+            # Check if it exists as is
+            if Path(file_path).exists():
+                return file_path
+                
+            # Extract filename
+            filename = Path(file_path).name
+            
+            # Search in known directories
+            search_dirs = ['documents', 'data', 'test_data', '.']
+            for directory in search_dirs:
+                for file_path in Path(directory).glob('*'):
+                    if file_path.name.lower() == filename.lower() or file_path.name == filename:
+                        logger.info(f"Found file at: {file_path}")
+                        return str(file_path)
+        
+        # Handle web URLs that might reference local files
+        file_match = re.search(r'/([^/]+\.\w+)$', url)
+        if file_match:
+            filename = file_match.group(1)
+            # Search in common directories
+            search_dirs = ['documents', 'data', 'test_data', '.', 'app']
+            for directory in search_dirs:
+                try:
+                    # Try exact match
+                    if Path(directory).exists():
+                        for file_path in Path(directory).glob('*'):
+                            if file_path.name.lower() == filename.lower() or file_path.name == filename:
+                                logger.info(f"Found file at: {file_path}")
+                                return str(file_path)
+                        
+                        # Try subdirectories
+                        for subdirectory in Path(directory).glob('**'):
+                            if subdirectory.is_dir():
+                                for file_path in subdirectory.glob('*'):
+                                    if file_path.name.lower() == filename.lower() or file_path.name == filename:
+                                        logger.info(f"Found file at: {file_path}")
+                                        return str(file_path)
+                except Exception as e:
+                    logger.error(f"Error searching directory {directory}: {str(e)}")
+            
+            # If we still haven't found it, try indexed documents
+            for doc_id, doc_entry in self.doc_tool.document_index.items():
+                if doc_entry.filename.lower() == filename.lower() or doc_entry.filename == filename:
+                    logger.info(f"Found indexed file: {doc_entry.path}")
+                    return doc_entry.path
+            
+            # If not found, return the filename as-is in case it's in the current directory
+            return filename
+        
+        return url
+        
+    def _get_document_as_webpage(self, file_path: str) -> Dict[str, Any]:
+        """
+        Format a document as if it were a webpage for consistency.
+        
+        Args:
+            file_path: Path to the document file
+            
+        Returns:
+            Dictionary with document content formatted like a webpage
+        """
+        try:
+            # Attempt to read the file directly
+            path = Path(file_path)
+            if path.exists():
+                content = path.read_text(errors='replace')
+                return {
+                    "url": f"file://{path.absolute()}",
+                    "title": path.name,
+                    "content": content,
+                    "html": None,
+                    "timestamp": time.ctime(path.stat().st_mtime),
+                    "metadata": {
+                        "size_bytes": path.stat().st_size,
+                        "last_modified": time.ctime(path.stat().st_mtime)
+                    }
+                }
+            
+            # If direct read fails, check if it's indexed and use that
+            logger.info(f"File not found directly, checking indexed documents: {file_path}")
+            doc = self.doc_tool.get_document(file_path)
+            if doc:
+                return {
+                    "url": f"file://{doc.filename}",
+                    "title": doc.filename,
+                    "content": doc.content,
+                    "html": None,
+                    "timestamp": time.ctime(),
+                    "metadata": doc.metadata
+                }
+            
+            # If not indexed either, return empty result
+            logger.warning(f"Document not found: {file_path}")
+            return {
+                "url": f"file://{file_path}",
+                "title": Path(file_path).name,
+                "content": f"[Document not found: {file_path}]",
+                "html": None,
+                "timestamp": time.ctime(),
+                "metadata": {}
+            }
+        except Exception as e:
+            logger.error(f"Error reading document {file_path}: {str(e)}")
+            return {
+                "url": f"file://{file_path}",
+                "title": Path(file_path).name,
+                "content": f"[Error reading document: {str(e)}]",
+                "html": None,
+                "timestamp": time.ctime(),
+                "metadata": {}
+            }
     
     def _store_in_memory(self, action: str, result: Any) -> None:
         """
@@ -212,6 +420,11 @@ class Executor:
             f"research results provided. Focus on answering the original question "
             f"and presenting the information clearly and concisely. "
             f"Cite sources where appropriate."
+            f"\n\nIMPORTANT: Today's date is {time.strftime('%B %d, %Y')}. "
+            f"Ensure ALL dates in your summary are accurate and not in the future. "
+            f"Use the current year ({time.strftime('%Y')}) for recent events. "
+            f"If a source URL returns a 404 error or was inaccessible, note this fact "
+            f"and do not treat it as a reliable source of information."
         )
         
         # Build the user prompt with all the results

@@ -23,6 +23,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.cursor
 
 # Unit test / coverage reports
 htmlcov/
@@ -52,8 +53,23 @@ venv.bak/
 *.swo
 
 # Project specific
-data/
 logs/
 *.db
-summary_*.md
+memory.db
+
+# Research and data files
+data/documents/
+data/summaries/
+documents/vector_store/
+documents/index.json
+*_*.md
 benchmark_results_*.json
+
+# Allow specific example files to be committed
+!data/documents/.gitkeep
+!data/summaries/.gitkeep
+!test_data/test_document.txt
+
+# OS specific
+.DS_Store
+Thumbs.db

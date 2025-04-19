@@ -1,10 +1,10 @@
-# AI Research Agent - Implementation Summary
+# ResearchGPT - Implementation Summary
 
-This document explains how our AI Research Agent implementation aligns with the principles and best practices outlined in OpenAI's [A Practical Guide to Building Agents](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf).
+This document explains the architecture and implementation details of the ResearchGPT agent, which provides comprehensive research capabilities using local LLMs via Ollama.
 
 ## 1. Agent Architecture Overview
 
-Our agent follows a modular architecture with clear separation of concerns:
+The agent follows a modular architecture with clear separation of concerns:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -18,7 +18,7 @@ Our agent follows a modular architecture with clear separation of concerns:
                                ▼                        ▼
                         ┌─────────────────┐     ┌─────────────────┐
                         │                 │     │                 │
-                        │  Model Wrapper  │     │      Tools      │
+                        │  Ollama Wrapper │     │      Tools      │
                         │                 │     │                 │
                         │                 │     │                 │
                         └─────────────────┘     └─────────────────┘
@@ -32,14 +32,14 @@ Our agent follows a modular architecture with clear separation of concerns:
                                                 └─────────────────┘
 ```
 
-## 2. Alignment with OpenAI's Guide
+## 2. Key Components
 
 ### 2.1. Planning and Execution Pipeline
 
-Our agent implements a clear planning and execution pipeline, following the guide's recommendation for Chain-of-Thought (CoT) planning:
+The agent uses a clear planning and execution pipeline:
 
 1. **Planning** (`agent/planner.py`): 
-   - Uses the LLM to generate a structured plan with explicit reasoning for each step
+   - Uses Ollama LLM to generate a structured research plan
    - Validates steps to ensure they have the required parameters
    - Provides fallback mechanisms when planning fails
 
@@ -50,37 +50,46 @@ Our agent implements a clear planning and execution pipeline, following the guid
 
 ### 2.2. Tools Integration
 
-The agent uses tools for:
+The agent includes specialized tools:
 
 1. **Web Research** (`agent/tools/web.py`):
-   - Search engine integration (placeholder for Google API)
+   - Search engine integration (Google API or direct web scraping)
    - Web page fetching and content extraction
    - Link extraction for further research
+   - Domain allowlisting for security
 
 2. **Document Retrieval** (`agent/tools/documents.py`):
-   - Vector-based search over local documents
+   - Vector-based search using Ollama embeddings
    - Document indexing and parsing
-   - Multiple file format support (text, PDF, Markdown, JSON)
+   - Multiple file format support (text, PDF, Markdown, JSON, code files)
+   - Enhanced error handling and content extraction
 
 Both tool modules implement robust error handling, rate limiting, and validation.
 
-### 2.3. Memory System
+### 2.3. Memory and Knowledge Management
 
-The agent implements a persistent memory system (`agent/memory.py`) that:
+The agent implements comprehensive knowledge management:
 
-- Stores conversation history, facts, and document references
-- Uses SQLite for reliable storage
-- Provides methods to store, retrieve, and search memories
-- Maintains context across interactions
+- **Persistent Memory** (`agent/memory.py`):
+  - Stores conversation history, facts, and document references
+  - Uses SQLite for reliable storage
+  - Maintains context across interactions
 
-### 2.4. LLM Integration
+- **Summary Management** (`app/cli.py`):
+  - Saves research summaries with meaningful filenames based on queries
+  - Organizes summaries with YAML frontmatter containing metadata
+  - Provides commands to list and view saved summaries
+  - Creates a knowledge base of past research
 
-The agent uses a model wrapper (`agent/model.py`) that:
+### 2.4. Ollama Integration
 
-- Abstracts the OpenAI API interactions
+The agent uses a custom Ollama wrapper (`agent/model.py`) that:
+
+- Abstracts the Ollama API interactions
 - Implements retry mechanisms for reliability
-- Supports both text and structured (JSON) outputs
-- Includes robust error handling and rate limiting
+- Supports both text generation and embeddings
+- Handles different model types and parameters
+- Falls back gracefully when model services are unavailable
 
 ### 2.5. User Interface
 
@@ -88,9 +97,10 @@ The CLI interface (`app/cli.py`) provides:
 
 - Interactive and single-query modes
 - Plan preview functionality (with --dry-run flag)
-- Document indexing operations
+- Document indexing and management
+- Summary browsing and viewing
 - Rich text output using the `rich` library
-- Clear summaries and execution status
+- Syntax highlighting for code documents
 
 ## 3. Safety and Security Considerations
 
@@ -102,14 +112,14 @@ The agent implements several safety mechanisms:
 4. **Execution Preview**: Users can review plans before execution with `--dry-run`
 5. **Error Handling**: Robust error handling throughout the codebase
 
-## 4. Performance and Scalability
+## 4. Performance Optimizations
 
 Performance considerations include:
 
 1. **Efficient Memory Usage**: SQLite database with proper indexing
 2. **Vector Search**: FAISS library for efficient document retrieval
-3. **Caching**: Reuse of embeddings when possible
-4. **Benchmarking**: Dedicated benchmarking module in `benchmarks/benchmark.py`
+3. **Document Chunking**: Smart document splitting for better search
+4. **Error Recovery**: Fallback mechanisms for extraction failures
 
 ## 5. Extensibility
 
@@ -125,17 +135,28 @@ The agent is designed for extensibility:
 Test coverage includes:
 
 1. **Unit Tests**: For individual components
-2. **Integration Tests**: To verify component interactions
-3. **Benchmarking**: To measure and optimize performance
+2. **Tool-specific Tests**: Dedicated test files for document and web tools
+3. **Model Integration Tests**: To verify Ollama interaction
 
-## 7. Conclusion
+## 7. Recent Enhancements
 
-This implementation follows the key principles outlined in OpenAI's guide:
+The latest version includes several key improvements:
 
-- Clear task decomposition and planning
-- Modular tools with appropriate guardrails
-- Persistent memory for maintaining context
-- User-friendly interface with appropriate controls
-- Focus on safety, reliability, and extensibility
+1. **Enhanced Document Handling**:
+   - Improved PDF content extraction
+   - Better code file parsing with language detection
+   - Robust error handling for document processing
 
-The design ensures the agent can be easily extended and maintained while providing useful research capabilities to users. 
+2. **Knowledge Management**:
+   - Summary saving with meaningful filenames
+   - YAML frontmatter for metadata
+   - Commands to browse and view past research
+
+3. **User Experience**:
+   - Syntax highlighting for code documents
+   - Better command structure in interactive mode
+   - More detailed error reporting
+
+## 8. Conclusion
+
+ResearchGPT combines the power of local language models with specialized research tools to create a powerful, privacy-focused research assistant. The modular design ensures it can be easily extended and maintained while providing comprehensive research capabilities to users. 

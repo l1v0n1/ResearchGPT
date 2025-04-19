@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10']
+        python-version: ['3.11', '3.12']
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -26,19 +26,16 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-cov
+        pip install pytest pytest-cov requests-mock
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    
-    - name: Set up environment
-      run: |
-        cp .env.example .env
-        # Add a placeholder for the OpenAI API key for tests
-        echo "OPENAI_API_KEY=sk-test-dummy-key-for-testing" >> .env
     
     - name: Run tests
       run: |
-        pytest --cov=agent tests/
+        # Run only non-interactive tests
+        pytest --cov=agent --ignore=tests/test_cli_summary.py tests/
       env:
         PYTHONPATH: ${{ github.workspace }}
-        # Tests will mock the API calls, so we don't need a real key
-        OPENAI_API_KEY: sk-test-dummy-key-for-testing 
+        # Set dummy Ollama URLs for tests, actual calls will be mocked
+        OLLAMA_BASE_URL: http://mock-ollama:11434 
+        OLLAMA_MODEL: test-model
+        OLLAMA_EMBED_MODEL: test-embed-model 
