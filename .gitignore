@@ -58,17 +58,17 @@ logs/
 memory.db
 
 # Research and data files
-data/documents/
-data/summaries/
-documents/vector_store/
-documents/index.json
-*_*.md
-benchmark_results_*.json
+# Exclude data files but not directories themselves
+data/documents/*
+data/summaries/*
+data/documents/vector_store/*
 
 # Allow specific example files to be committed
 !data/documents/.gitkeep
 !data/summaries/.gitkeep
-!test_data/test_document.txt
+!data/documents/vector_store/.gitkeep
+!data/documents/test_document.txt
+!data/summaries/test_summary.md
 
 # OS specific
 .DS_Store

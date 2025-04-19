@@ -15,16 +15,20 @@ COPY requirements-lite.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-lite.txt
 
+# Create necessary directories first
+RUN mkdir -p data/documents/vector_store data/summaries logs
+
 # Copy the application code, excluding test files
 COPY agent/ agent/
 COPY app/ app/
-COPY data/ data/
 COPY docs/ docs/
 COPY .env.example .env.example
 COPY README.md .
 
-# Create necessary directories
-RUN mkdir -p data/documents logs data/summaries
+# Ensure data directories exist
+# This is a redundant step to ensure the directories are created
+# even if the COPY steps fail due to missing directories
+RUN mkdir -p data/documents/vector_store data/summaries logs
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

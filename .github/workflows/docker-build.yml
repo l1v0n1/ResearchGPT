@@ -17,6 +17,15 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
+    # Ensure data directories exist
+    - name: Create data directories
+      run: |
+        mkdir -p data/documents
+        mkdir -p data/summaries
+        touch data/documents/.gitkeep
+        touch data/summaries/.gitkeep
+        echo "Data directories created for Docker build"
+    
     # Build and test the lite version (preferred for most users)
     - name: Build Docker image (Lite Version)
       uses: docker/build-push-action@v5
