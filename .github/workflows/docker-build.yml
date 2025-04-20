@@ -33,6 +33,7 @@ jobs:
         context: .
         file: ./Dockerfile.lite
         push: false
+        load: true  # Load the image into the Docker daemon
         tags: researchgpt:lite-test
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -51,6 +52,7 @@ jobs:
         context: .
         file: ./Dockerfile
         push: false
+        load: true  # Load the image into the Docker daemon
         tags: researchgpt:alpine-test
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -70,6 +72,7 @@ jobs:
         context: .
         file: ./Dockerfile.debian
         push: false
+        load: true  # Load the image into the Docker daemon
         tags: researchgpt:debian-test
         cache-from: type=gha
         cache-to: type=gha,mode=max
