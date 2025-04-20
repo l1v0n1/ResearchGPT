@@ -55,6 +55,7 @@ class Planner:
             "extract_links",
             "extract_text",
             "search_documents",
+            "analyze_webpage",  # New action to analyze webpage content
             "get_document_summary",
             "generate_summary",
             "ask_user"
@@ -81,6 +82,10 @@ class Planner:
                                              "selector" not in step.parameters):
             logger.warning("Invalid step: extract_text requires 'url' and 'selector' parameters")
             return False
+        
+        if step.action == "analyze_webpage" and "url" not in step.parameters:
+            logger.warning("Invalid step: analyze_webpage requires 'url' parameter")
+            return False
             
         if step.action == "search_documents" and "query" not in step.parameters:
             logger.warning("Invalid step: search_documents requires 'query' parameter")
@@ -88,6 +93,10 @@ class Planner:
             
         if step.action == "get_document_summary" and "file_path" not in step.parameters:
             logger.warning("Invalid step: get_document_summary requires 'file_path' parameter")
+            # Prevent incorrect usage with URLs
+            if "file_path" in step.parameters and step.parameters["file_path"].startswith("http"):
+                logger.warning("Invalid step: get_document_summary cannot be used with URLs")
+                return False
             return False
         
         return True
@@ -104,32 +113,59 @@ class Planner:
         """
         # System prompt that guides the model to produce a well-structured plan
         system_prompt = (
-            f"You are {config.AGENT_NAME}, a research assistant AI. "
-            f"Your task is to generate a step-by-step plan to answer the user's query. "
-            f"The plan should include research actions like searching the web, fetching relevant "
-            f"pages, extracting information, and searching documents.\n\n"
-            f"Available actions:\n"
-            f"- search_web: Search the web for information (parameters: query)\n"
-            f"- fetch_webpage: Fetch and read a webpage (parameters: url)\n"
-            f"- extract_links: Extract links from a webpage (parameters: url)\n"
-            f"- extract_text: Extract text using a CSS selector (parameters: url, selector)\n"
-            f"- search_documents: Search local documents (parameters: query)\n"
-            f"- get_document_summary: Get a summary of a document (parameters: file_path)\n"
-            f"- generate_summary: Generate a summary of collected information (parameters: none)\n"
-            f"- ask_user: Ask the user for clarification (parameters: question)\n\n"
-            f"For each step, provide:\n"
-            f"1. The action to take\n"
-            f"2. Necessary parameters for the action\n"
-            f"3. Your reasoning for this step\n\n"
-            f"Return the plan as a JSON object with a 'steps' array where each step has "
-            f"'action', 'parameters', and 'reasoning' fields."
+            f"# Advanced Research Planning System\n\n"
+            f"You are the planning component of {config.AGENT_NAME}, an advanced AI research assistant. "
+            f"Your task is to generate a comprehensive, step-by-step research plan to thoroughly answer the user's query. "
+            f"Think of yourself as a research strategist designing the optimal approach to collect, analyze, and synthesize information.\n\n"
+            
+            f"## Planning Principles\n"
+            f"1. **Depth and Breadth**: Balance deep investigation with broad context gathering\n"
+            f"2. **Multiple Perspectives**: Seek diverse viewpoints and sources\n"
+            f"3. **Verification**: Cross-reference information across multiple reliable sources\n"
+            f"4. **Structured Approach**: Break complex queries into logical components\n"
+            f"5. **Adaptability**: Design plans that can evolve as new information emerges\n\n"
+            
+            f"## Available Research Actions\n"
+            f"- search_web: Search the web for information (parameters: {{'query': 'your search query'}})\n"
+            f"- fetch_webpage: Fetch and read a webpage (parameters: {{'url': 'https://example.com'}})\n"
+            f"- extract_links: Extract links from a webpage (parameters: {{'url': 'https://example.com'}})\n"
+            f"- extract_text: Extract specific text using a CSS selector (parameters: {{'url': 'https://example.com', 'selector': '.main-content'}})\n"
+            f"- analyze_webpage: Analyze the content of a webpage to extract key information (parameters: {{'url': 'https://example.com'}})\n"
+            f"- search_documents: Search local knowledge base documents (parameters: {{'query': 'your document search query'}})\n"
+            f"- get_document_summary: Get a summary of a specific LOCAL document (parameters: {{'file_path': 'path/to/document'}})\n"
+            f"- generate_summary: Generate a final comprehensive summary of collected information (parameters: {{}})\n"
+            f"- ask_user: Ask for user clarification when needed (parameters: {{'question': 'What specific aspect are you interested in?'}})\n\n"
+            
+            f"## Planning Guide\n"
+            f"1. **Analyze the Query**: Begin by understanding what information is needed\n"
+            f"2. **Gather General Context**: Start with broad sources to establish foundational knowledge\n"
+            f"3. **Explore Specific Details**: Use analyze_webpage to extract information from important articles\n"
+            f"4. **Verify Information**: Cross-check important facts across multiple sources\n"
+            f"5. **Synthesize**: Plan for a comprehensive summary that addresses all aspects\n\n"
+            
+            f"## IMPORTANT NOTES\n"
+            f"- After fetching webpages or extracting links, ALWAYS follow up with analyze_webpage to extract the content\n"
+            f"- The get_document_summary action is ONLY for local documents, NOT for web URLs\n"
+            f"- Your plan should always analyze articles to extract information, not just fetch them\n\n"
+            
+            f"## Plan Structure Requirements\n"
+            f"For each step in your plan provide:\n"
+            f"1. The specific action to take (from the available actions list)\n"
+            f"2. All necessary parameters for that action (as a valid JSON object, use an empty object {{}} if no parameters are needed)\n"
+            f"3. Detailed reasoning explaining your strategic thinking for this step\n\n"
+            
+            f"Return the plan as a valid JSON object with a 'steps' array where each step has "
+            f"'action', 'parameters', and 'reasoning' fields. Ensure all 'parameters' values are valid JSON objects."
         )
         
         # User prompt
         user_prompt = (
-            f"Generate a step-by-step research plan to answer this query: '{query}'\n\n"
-            f"Think carefully about what information is needed and the most efficient "
-            f"way to collect it. Provide your response as a valid JSON object with a 'steps' array."
+            f"Create a comprehensive research plan to thoroughly answer this query: '{query}'\n\n"
+            f"Carefully analyze what information is needed and design the most effective approach to gather and synthesize it. "
+            f"Consider what sources would be most authoritative for this topic and how to cross-verify information. "
+            f"Break complex aspects into multiple research steps. "
+            f"IMPORTANT: After fetching web content, always include an 'analyze_webpage' step to extract key information.\n\n"
+            f"Your response must be a valid JSON object with a 'steps' array. Ensure parameters are always JSON objects, using {{}} for empty parameters."
         )
         
         try:
@@ -141,19 +177,46 @@ class Planner:
             )
             
             if not plan_json or "steps" not in plan_json:
-                logger.error("Failed to generate a valid plan")
+                logger.error("Failed to generate a valid plan from LLM response")
                 return None
             
-            # Create the Plan object
+            # Create the Plan object with validation and type correction
             steps = []
-            for step_data in plan_json["steps"]:
-                step = ActionStep(
-                    action=step_data.get("action", ""),
-                    parameters=step_data.get("parameters", {}),
-                    reasoning=step_data.get("reasoning", "")
-                )
-                steps.append(step)
+            for step_data in plan_json.get("steps", []):
+                try:
+                    # Basic validation of step_data structure
+                    if not isinstance(step_data, dict) or "action" not in step_data:
+                        logger.warning(f"Skipping invalid step data (not a dict or missing action): {step_data}")
+                        continue
+                    
+                    action = step_data.get("action", "")
+                    parameters = step_data.get("parameters", {})
+                    reasoning = step_data.get("reasoning", "")
+
+                    # Attempt to fix common parameter type errors (e.g., string instead of dict)
+                    if action == "search_web" and isinstance(parameters, str):
+                        logger.warning(f"Correcting parameters for search_web: converting string '{parameters}' to dict")
+                        parameters = {"query": parameters}
+                    elif not isinstance(parameters, dict):
+                        logger.warning(f"Invalid parameter type for action '{action}': expected dict, got {type(parameters)}. Defaulting to empty dict.")
+                        parameters = {}
+
+                    # Create ActionStep with validated/corrected data
+                    step = ActionStep(
+                        action=action,
+                        parameters=parameters,
+                        reasoning=reasoning
+                    )
+                    steps.append(step)
+                except Exception as validation_error:
+                    logger.error(f"Error validating step data {step_data}: {validation_error}")
+                    # Optionally skip this step or handle error differently
+                    continue
             
+            if not steps:
+                logger.error("No valid steps could be parsed from the generated plan.")
+                return None
+
             plan = Plan(
                 query=query,
                 steps=steps,
@@ -274,14 +337,40 @@ class Planner:
                         updated_plan.steps[step_index + 1].action != "fetch_webpage"):
                 # Insert new steps to fetch the top URLs
                 for i, url in enumerate(urls[:2]):  # Limit to top 2 results
-                    new_step = ActionStep(
+                    # Add fetch step
+                    fetch_step = ActionStep(
                         action="fetch_webpage",
                         parameters={"url": url},
                         reasoning=f"Fetching content from relevant search result: {url}"
                     )
-                    updated_plan.steps.insert(step_index + 1 + i, new_step)
+                    updated_plan.steps.insert(step_index + 1 + (i*2), fetch_step)
                     
-                logger.info(f"Added {min(2, len(urls))} fetch_webpage steps based on search results")
+                    # Add analyze step immediately after fetch
+                    analyze_step = ActionStep(
+                        action="analyze_webpage",
+                        parameters={"url": url},
+                        reasoning=f"Analyzing content from fetched webpage to extract key information: {url}"
+                    )
+                    updated_plan.steps.insert(step_index + 2 + (i*2), analyze_step)
+                    
+                logger.info(f"Added {min(2, len(urls))*2} steps (fetch+analyze) based on search results")
+        
+        # If we just fetched a webpage, ensure there's an analyze step
+        elif step.action == "fetch_webpage" and result:
+            url = step.parameters.get("url", "")
+            # Check if the next step is not already to analyze this page
+            if (step_index + 1 >= len(updated_plan.steps) or 
+                updated_plan.steps[step_index + 1].action != "analyze_webpage" or
+                updated_plan.steps[step_index + 1].parameters.get("url") != url):
+                
+                # Insert new analyze step
+                analyze_step = ActionStep(
+                    action="analyze_webpage",
+                    parameters={"url": url},
+                    reasoning=f"Analyzing content from fetched webpage to extract key information: {url}"
+                )
+                updated_plan.steps.insert(step_index + 1, analyze_step)
+                logger.info(f"Added analyze_webpage step for {url}")
         
         return updated_plan
     

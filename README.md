@@ -263,4 +263,22 @@ For more detailed information about the project, check out the documentation fil
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Web Search Configuration
+
+This project includes utilities to configure and test web search capabilities:
+
+- **Domain Configuration**: Control which domains are allowed for web scraping
+- **Google Search API Setup**: Configure and test your Google Search API credentials
+- **Search Testing**: Test functionality with various domains and queries
+
+Usage information can be found in the [utils/README.md](utils/README.md) file.
+
+```bash
+# Example: List currently allowed domains
+python utils/configure_domains.py --list
+
+# Example: Configure Google Search API
+python utils/configure_google_api.py --show
+``` 

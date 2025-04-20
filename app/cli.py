@@ -161,8 +161,22 @@ def save_summary(query: str, summary: str) -> str:
     filename = f"{slug}_{timestamp}.md"
     filepath = config.SUMMARIES_DIR / filename
     
-    # Format timestamp for readable date
-    formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+    # Get the corrected date if available
+    from datetime import datetime
+    from agent.logger import AgentLogger
+    
+    current_time = time.localtime(timestamp)
+    formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", current_time)
+    
+    # Try to apply the date offset if it exists
+    try:
+        dt = datetime.fromtimestamp(timestamp)
+        if hasattr(AgentLogger, '_date_offset'):
+            dt = dt - AgentLogger._date_offset
+            formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        # If there's any error, fall back to the original timestamp
+        pass
     
     # Create content with metadata header
     content = f"""---
@@ -776,47 +790,44 @@ def view_summary(filename):
         logger.error(f"Error viewing summary: {str(e)}")
 
 def main():
-    """Main entry point for the CLI."""
+    """Main entry point for the CLI application."""
     parser, args = parse_arguments()
     
-    # Handle document operations
-    if args.list_documents:
-        display_header()
-        list_documents()
-        return
+    # Apply date correction if system time seems incorrect
+    try:
+        from datetime import datetime
+        from agent.logger import set_global_date_offset
         
-    if args.index_document:
-        display_header()
-        index_document(args.index_document)
-        return
-        
-    if args.index_directory:
-        display_header()
-        index_directory(args.index_directory)
-        return
+        # Check if the system year is beyond 2024
+        current_year = datetime.now().year
+        if current_year > 2024:
+            # Calculate year difference and apply offset
+            year_diff = current_year - 2024
+            print(f"System date appears to be incorrect (year {current_year}).")
+            print(f"Applying date correction: {current_year} → 2024")
+            set_global_date_offset(year_diff=year_diff)
+    except Exception as e:
+        print(f"Warning: Failed to check system date: {str(e)}")
     
-    # Handle summary operations
-    if args.list_summaries:
-        display_header()
-        list_summaries()
-        return
-        
-    if args.view_summary:
-        display_header()
-        view_summary(args.view_summary)
-        return
+    # Display header
+    display_header()
     
-    # Interactive mode
+    # Check which mode to run in
     if args.interactive:
         interactive_mode()
-        return
-    
-    # Query mode
-    if args.query:
-        display_header()
+    elif args.list_documents:
+        list_documents()
+    elif args.index_document:
+        index_document(args.index_document)
+    elif args.index_directory:
+        index_directory(args.index_directory)
+    elif args.list_summaries:
+        list_summaries()
+    elif args.view_summary:
+        view_summary(args.view_summary)
+    elif args.query:
         execute_query(args.query, dry_run=args.dry_run, verbose=args.verbose)
     else:
-        # If no query and no special commands, show help
         parser.print_help()
 
 if __name__ == "__main__":

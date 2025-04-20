@@ -25,6 +25,28 @@ jobs:
         touch data/documents/.gitkeep
         touch data/summaries/.gitkeep
         echo "Data directories created for Docker build"
+        
+        # Create wheelhouse directory for pre-built wheels
+        mkdir -p wheelhouse
+        echo "Created wheelhouse directory"
+    
+    # Pre-build faiss-cpu wheel for use in Docker builds
+    - name: Pre-build faiss-cpu wheel
+      run: |
+        # Set up Python
+        python -m pip install --upgrade pip setuptools wheel
+        
+        # Install build dependencies
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libopenblas-dev libomp-dev swig
+        
+        # Install faiss-cpu with pip to generate a wheel
+        pip wheel -w wheelhouse faiss-cpu==1.7.4
+        
+        # List the created wheels
+        ls -la wheelhouse
+        
+        echo "Pre-built faiss-cpu wheel created"
     
     # Build and test the lite version (preferred for most users)
     - name: Build Docker image (Lite Version)

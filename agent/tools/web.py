@@ -104,9 +104,14 @@ class WebScrapingTool:
             True if successful, False otherwise
         """
         try:
+            # Get the corrected date by applying any configured offset
+            current_time = datetime.now()
+            if hasattr(AgentLogger, '_date_offset'):
+                current_time = current_time - AgentLogger._date_offset
+                
             with open(cache_path, 'w', encoding='utf-8') as f:
                 cache_entry = {
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': current_time.isoformat(),
                     'data': data
                 }
                 json.dump(cache_entry, f)
@@ -132,9 +137,14 @@ class WebScrapingTool:
             with open(cache_path, 'r', encoding='utf-8') as f:
                 cache_entry = json.load(f)
                 
-            # Check expiry
+            # Check expiry with corrected current time
             timestamp = datetime.fromisoformat(cache_entry['timestamp'])
-            if datetime.now() - timestamp > self.cache_expiry:
+            
+            current_time = datetime.now()
+            if hasattr(AgentLogger, '_date_offset'):
+                current_time = current_time - AgentLogger._date_offset
+                
+            if current_time - timestamp > self.cache_expiry:
                 logger.info(f"Cache expired for {cache_path}")
                 return None
                 
@@ -737,4 +747,115 @@ class WebScrapingTool:
             
         except Exception as e:
             logger.error(f"Error extracting text with selector '{selector}' from {url}: {str(e)}")
-            return "" 
+            return ""
+            
+    def analyze_webpage(self, url: str) -> Dict[str, Any]:
+        """
+        Analyze a webpage to extract key information and structured content.
+        
+        This method fetches a webpage and performs intelligent analysis to extract:
+        - Main content
+        - Key points
+        - Important metadata
+        - Article structure
+        
+        Args:
+            url: The URL of the webpage to analyze
+            
+        Returns:
+            Dictionary with extracted information
+        """
+        page = self.fetch_page(url)
+        if not page:
+            return {
+                "url": url,
+                "success": False,
+                "error": "Failed to fetch webpage"
+            }
+        
+        try:
+            # Parse HTML content
+            soup = BeautifulSoup(page.html, "html.parser")
+            
+            # Extract metadata and key information
+            result = {
+                "url": url,
+                "title": page.title,
+                "success": True,
+                "timestamp": page.timestamp,
+                "main_content": page.content,
+                "metadata": page.metadata,
+                "structure": {}
+            }
+            
+            # Try to identify the main article content
+            article = soup.find(["article", "main"])
+            if article:
+                result["main_content"] = article.get_text(strip=True)
+            
+            # Extract headings to understand structure
+            headings = []
+            for heading in soup.find_all(["h1", "h2", "h3"]):
+                headings.append({
+                    "level": int(heading.name[1]),
+                    "text": heading.get_text(strip=True)
+                })
+            result["structure"]["headings"] = headings
+            
+            # Extract lists (could be key points)
+            lists = []
+            for list_elem in soup.find_all(["ul", "ol"]):
+                list_items = []
+                for item in list_elem.find_all("li"):
+                    list_items.append(item.get_text(strip=True))
+                if list_items:
+                    lists.append({
+                        "type": list_elem.name,
+                        "items": list_items
+                    })
+            result["structure"]["lists"] = lists
+            
+            # Extract tables
+            tables = []
+            for table in soup.find_all("table"):
+                table_data = []
+                rows = table.find_all("tr")
+                
+                # Process headers
+                headers = []
+                header_row = table.find("thead")
+                if header_row:
+                    for th in header_row.find_all(["th"]):
+                        headers.append(th.get_text(strip=True))
+                
+                # Process data rows
+                for row in rows:
+                    row_data = []
+                    for cell in row.find_all(["td", "th"]):
+                        row_data.append(cell.get_text(strip=True))
+                    if row_data:  # Skip empty rows
+                        table_data.append(row_data)
+                
+                if table_data:
+                    tables.append({
+                        "headers": headers,
+                        "data": table_data
+                    })
+            result["structure"]["tables"] = tables
+            
+            # Extract key dates using a simple pattern
+            date_pattern = re.compile(r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b')
+            dates = date_pattern.findall(page.content)
+            result["extracted_dates"] = dates
+            
+            logger.info(f"Successfully analyzed webpage: {url}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing webpage {url}: {str(e)}")
+            return {
+                "url": url,
+                "success": False,
+                "error": str(e),
+                "content": page.content if page else None
+            } 

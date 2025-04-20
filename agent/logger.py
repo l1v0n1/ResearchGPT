@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from agent import config
 
@@ -15,6 +15,23 @@ class AgentLogger:
     A custom logger for the AI Research Agent that provides consistent logging
     across all components of the application.
     """
+
+    # Class-level date offset to apply to all loggers
+    _date_offset = timedelta(days=0)
+
+    @classmethod
+    def set_date_offset(cls, days=0, hours=0, minutes=0):
+        """
+        Set a global date offset to apply to all timestamps.
+        This is useful for correcting system time issues without changing the system clock.
+        
+        Args:
+            days: Days to offset
+            hours: Hours to offset
+            minutes: Minutes to offset
+        """
+        cls._date_offset = timedelta(days=days, hours=hours, minutes=minutes)
+        logging.info(f"Date offset set to {cls._date_offset}")
 
     def __init__(self, name: str, log_file: Optional[str] = None):
         """
@@ -86,8 +103,11 @@ class AgentLogger:
             message: The log message
             **kwargs: Additional metadata to include in the log
         """
+        # Apply the date offset to the current time to get the correct timestamp
+        current_time = datetime.now() - self._date_offset
+        
         metadata = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": current_time.isoformat(),
             "agent": config.AGENT_NAME,
         }
         metadata.update(kwargs)
@@ -101,3 +121,32 @@ class AgentLogger:
 
 # Create a default logger for the agent
 agent_logger = AgentLogger("agent") 
+
+def set_global_date_offset(year_diff=0, month_diff=0, day_diff=0):
+    """
+    Utility function to set a global date offset based on the difference between 
+    the current system time and the actual correct time.
+    
+    Args:
+        year_diff: Difference in years (current - correct)
+        month_diff: Difference in months (current - correct)
+        day_diff: Difference in days (current - correct)
+    
+    Example:
+        If system shows 2025-04-20 but it's actually 2024-04-26:
+        set_global_date_offset(year_diff=1, month_diff=0, day_diff=-6)
+    """
+    now = datetime.now()
+    
+    # Calculate approximate days from year and month differences
+    days_from_years = year_diff * 365
+    days_from_months = month_diff * 30  # Approximation
+    
+    # Total days difference
+    total_days = days_from_years + days_from_months + day_diff
+    
+    AgentLogger.set_date_offset(days=total_days)
+    
+    corrected_date = datetime.now() - timedelta(days=total_days)
+    print(f"Date offset set: System time {now} → Corrected time {corrected_date}")
+    return corrected_date 

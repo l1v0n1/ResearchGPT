@@ -162,6 +162,50 @@ class Executor:
                 logger.info(f"Extracting text from {url} with selector '{selector}'")
                 return self.web_tool.extract_text_with_selector(url, selector)
             
+        elif action == "analyze_webpage":
+            url = params.get("url", "")
+            logger.info(f"Analyzing webpage: {url}")
+            
+            # Check if this is actually a local file reference
+            if self._is_local_file_reference(url):
+                file_path = self._extract_file_path(url)
+                logger.info(f"Analyzing local file as webpage: {file_path}")
+                
+                # Convert document to webpage format and return it
+                doc_as_webpage = self._get_document_as_webpage(file_path)
+                
+                # Add structured analysis similar to webpage analysis
+                structured_data = {
+                    "url": doc_as_webpage.get("url", ""),
+                    "title": doc_as_webpage.get("title", ""),
+                    "success": True,
+                    "main_content": doc_as_webpage.get("content", ""),
+                    "metadata": doc_as_webpage.get("metadata", {}),
+                    "structure": {
+                        "headings": [],
+                        "lists": [],
+                        "tables": []
+                    }
+                }
+                
+                # Extract simple structure from the content
+                content = doc_as_webpage.get("content", "")
+                if content:
+                    # Extract headings using regex (basic approach)
+                    heading_pattern = re.compile(r'^(#+)\s+(.+)$', re.MULTILINE)
+                    for match in heading_pattern.finditer(content):
+                        level = len(match.group(1))
+                        text = match.group(2).strip()
+                        structured_data["structure"]["headings"].append({
+                            "level": level,
+                            "text": text
+                        })
+                
+                return structured_data
+            else:
+                # Use web tool to analyze regular webpage
+                return self.web_tool.analyze_webpage(url)
+            
         elif action == "search_documents":
             query = params.get("query", "")
             logger.info(f"Searching documents for: {query}")
@@ -404,77 +448,77 @@ class Executor:
     
     def _generate_summary(self, query: str, execution_context: Dict[str, Any]) -> str:
         """
-        Generate a summary of the research results.
+        Generate a research summary based on the execution context.
         
         Args:
-            query: The original query
-            execution_context: The context with results from all steps
+            query: The original research query
+            execution_context: Context containing results from all steps
             
         Returns:
-            A summary of findings
+            A formatted summary
         """
-        # Prepare a prompt that includes the query and results
+        # Extract relevant information from the execution context
+        web_results = []
+        document_results = []
+        
+        for key, value in execution_context.items():
+            if key.startswith("result_search_web") and value:
+                web_results.append(value)
+            if key.startswith("result_fetch_webpage") and value:
+                web_results.append(value)
+            if key.startswith("result_search_documents") and value:
+                document_results.append(value)
+        
+        # Format results for model consumption
+        formatted_web_results = self._format_web_results(web_results)
+        formatted_doc_results = self._format_doc_results(document_results)
+        
+        # Generate the summary using the model
+        from datetime import datetime, timedelta
+        
+        # Apply date offset if available to get corrected current date
+        current_date = datetime.now()
+        if hasattr(AgentLogger, '_date_offset'):
+            current_date = current_date - AgentLogger._date_offset
+            
+        current_date_str = current_date.strftime("%Y-%m-%d")
+        
+        # Build the prompt
         system_prompt = (
             f"You are {config.AGENT_NAME}, a research assistant AI. "
             f"Your task is to generate a comprehensive summary based on the "
             f"research results provided. Focus on answering the original question "
             f"and presenting the information clearly and concisely. "
             f"Cite sources where appropriate."
-            f"\n\nIMPORTANT: Today's date is {time.strftime('%B %d, %Y')}. "
+            f"\n\nIMPORTANT: Today's date is {current_date_str}. "
             f"Ensure ALL dates in your summary are accurate and not in the future. "
-            f"Use the current year ({time.strftime('%Y')}) for recent events. "
             f"If a source URL returns a 404 error or was inaccessible, note this fact "
             f"and do not treat it as a reliable source of information."
         )
         
-        # Build the user prompt with all the results
-        user_prompt = f"Please provide a comprehensive answer to the following query:\n\n{query}\n\n"
-        user_prompt += "Research results:\n\n"
+        user_prompt = f"""
+        Based on the following information, create a comprehensive research summary for the query: "{query}".
         
-        # Add web search results
-        web_results = []
-        for key, value in execution_context.items():
-            if key.startswith("result_search_web_") and value:
-                user_prompt += "Web Search Results:\n"
-                if isinstance(value, list):
-                    for item in value[:5]:  # Limit to first 5 results
-                        if isinstance(item, dict):
-                            title = item.get("title", "No title")
-                            snippet = item.get("snippet", "No snippet")
-                            url = item.get("url", "")
-                            user_prompt += f"- {title}: {snippet} (Source: {url})\n\n"
-                web_results.extend(value if isinstance(value, list) else [])
-                
-        # Add webpage contents
-        for key, value in execution_context.items():
-            if key.startswith("result_fetch_webpage_") and value:
-                if isinstance(value, dict):
-                    title = value.get("title", "Untitled")
-                    content = value.get("content", "")
-                    url = value.get("url", "")
-                    
-                    # Truncate content if too long
-                    if len(content) > 1500:
-                        content = content[:1500] + "..."
-                        
-                    user_prompt += f"Webpage: {title} (Source: {url})\n"
-                    user_prompt += f"Content: {content}\n\n"
+        Web search results:
+        {formatted_web_results}
         
-        # Add document search results
-        for key, value in execution_context.items():
-            if key.startswith("result_search_documents_") and value:
-                user_prompt += "Document Search Results:\n"
-                if isinstance(value, list):
-                    for item in value[:5]:  # Limit to first 5 results
-                        if isinstance(item, dict):
-                            text = item.get("text", "")
-                            metadata = item.get("metadata", {})
-                            source = metadata.get("source", "Unknown")
-                            
-                            user_prompt += f"- {text} (Source: {source})\n\n"
+        Document search results:
+        {formatted_doc_results}
         
-        # Generate summary
-        logger.info("Generating research summary")
+        Your task is to:
+        1. Synthesize all the information into a coherent, well-structured summary
+        2. Organize information by topics or themes
+        3. Highlight key findings and insights
+        4. Note any areas where information is limited or contradictory
+        5. Include all relevant facts and perspectives
+        6. Format the summary in a clean, readable way with headings and bullet points
+        7. At the end, suggest follow-up questions or areas for further research
+        8. Make sure all information is factual and derived from the sources provided
+        
+        Please provide a detailed yet concise summary between 1500-3000 characters.
+        """
+        
+        # Get summary from model
         summary = self.model.generate_text(
             prompt=user_prompt,
             system_message=system_prompt,
@@ -482,6 +526,7 @@ class Executor:
         )
         
         logger.info(f"Generated summary: {len(summary)} chars")
+        
         return summary
     
     def _generate_execution_preview(self, plan: Plan) -> str:
@@ -521,4 +566,64 @@ class Executor:
         )
         
         logger.info(f"Generated execution preview: {len(preview)} chars")
-        return preview 
+        return preview
+
+    def _format_web_results(self, results: List[Any]) -> str:
+        """
+        Format web search results for inclusion in the summary prompt.
+        
+        Args:
+            results: List of web search results
+            
+        Returns:
+            Formatted string representation of results
+        """
+        formatted = ""
+        
+        for result in results:
+            if isinstance(result, list):
+                # Handle search results list
+                for item in result[:5]:  # Limit to first 5 results
+                    if isinstance(item, dict):
+                        title = item.get("title", "No title")
+                        snippet = item.get("snippet", "No snippet")
+                        url = item.get("url", "")
+                        formatted += f"- {title}: {snippet} (Source: {url})\n\n"
+            elif isinstance(result, dict):
+                # Handle webpage content
+                title = result.get("title", "Untitled")
+                content = result.get("content", "")
+                url = result.get("url", "")
+                
+                # Truncate content if too long
+                if len(content) > 1500:
+                    content = content[:1500] + "..."
+                    
+                formatted += f"Webpage: {title} (Source: {url})\n"
+                formatted += f"Content: {content}\n\n"
+        
+        return formatted or "No web results available."
+        
+    def _format_doc_results(self, results: List[Any]) -> str:
+        """
+        Format document search results for inclusion in the summary prompt.
+        
+        Args:
+            results: List of document search results
+            
+        Returns:
+            Formatted string representation of results
+        """
+        formatted = ""
+        
+        for result in results:
+            if isinstance(result, list):
+                for item in result[:5]:  # Limit to first 5 results
+                    if isinstance(item, dict):
+                        text = item.get("text", "")
+                        metadata = item.get("metadata", {})
+                        source = metadata.get("source", "Unknown")
+                        
+                        formatted += f"- {text} (Source: {source})\n\n"
+        
+        return formatted or "No document results available." 
