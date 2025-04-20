@@ -460,14 +460,24 @@ class Executor:
         # Extract relevant information from the execution context
         web_results = []
         document_results = []
+        error_count = 0
         
         for key, value in execution_context.items():
             if key.startswith("result_search_web") and value:
                 web_results.append(value)
             if key.startswith("result_fetch_webpage") and value:
+                # Count failed fetches
+                fetch_success = value.get("metadata", {}).get("fetch_success", True)
+                fetch_failed = value.get("fetch_failed", False)
+                if not fetch_success or fetch_failed:
+                    error_count += 1
                 web_results.append(value)
             if key.startswith("result_search_documents") and value:
                 document_results.append(value)
+            if key.startswith("result_analyze_webpage") and value:
+                # Count failed analysis
+                if value.get("success", True) == False:
+                    error_count += 1
         
         # Format results for model consumption
         formatted_web_results = self._format_web_results(web_results)
@@ -494,6 +504,10 @@ class Executor:
             f"Ensure ALL dates in your summary are accurate and not in the future. "
             f"If a source URL returns a 404 error or was inaccessible, note this fact "
             f"and do not treat it as a reliable source of information."
+            f"\n\nCRITICAL: There were {error_count} failed source fetches or analyses. "
+            f"DO NOT make up information for sources you couldn't access. "
+            f"If you don't have sufficient reliable information to answer the query, "
+            f"explicitly state this limitation. NEVER invent citations or facts."
         )
         
         user_prompt = f"""
@@ -514,6 +528,13 @@ class Executor:
         6. Format the summary in a clean, readable way with headings and bullet points
         7. At the end, suggest follow-up questions or areas for further research
         8. Make sure all information is factual and derived from the sources provided
+        
+        IMPORTANT INSTRUCTIONS:
+        - If sources failed to load or returned errors, acknowledge this limitation
+        - DO NOT make up information for sources that couldn't be accessed
+        - Only include facts that are verifiable from the successfully retrieved sources
+        - If you don't have enough reliable information, clearly state this limitation
+        - NEVER cite failed sources as if they contained information
         
         Please provide a detailed yet concise summary between 1500-3000 characters.
         """
@@ -590,17 +611,33 @@ class Executor:
                         url = item.get("url", "")
                         formatted += f"- {title}: {snippet} (Source: {url})\n\n"
             elif isinstance(result, dict):
-                # Handle webpage content
-                title = result.get("title", "Untitled")
-                content = result.get("content", "")
-                url = result.get("url", "")
+                # Check if this was a failed fetch
+                fetch_success = result.get("metadata", {}).get("fetch_success", True)
+                fetch_failed = result.get("fetch_failed", False)
                 
-                # Truncate content if too long
-                if len(content) > 1500:
-                    content = content[:1500] + "..."
+                if not fetch_success or fetch_failed:
+                    # This was a failed fetch - mark it clearly
+                    title = result.get("title", "Error")
+                    url = result.get("url", "")
+                    error = result.get("metadata", {}).get("error", "Unknown error")
+                    if not error and "error" in result:
+                        error = result["error"]
+                        
+                    formatted += f"[FAILED SOURCE] {title} (URL: {url})\n"
+                    formatted += f"Error: {error}\n"
+                    formatted += "WARNING: This source could not be accessed and should not be cited or used as a reference.\n\n"
+                else:
+                    # Handle webpage content
+                    title = result.get("title", "Untitled")
+                    content = result.get("content", "")
+                    url = result.get("url", "")
                     
-                formatted += f"Webpage: {title} (Source: {url})\n"
-                formatted += f"Content: {content}\n\n"
+                    # Truncate content if too long
+                    if len(content) > 1500:
+                        content = content[:1500] + "..."
+                        
+                    formatted += f"Webpage: {title} (Source: {url})\n"
+                    formatted += f"Content: {content}\n\n"
         
         return formatted or "No web results available."
         

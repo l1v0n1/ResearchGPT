@@ -5,6 +5,7 @@ import time
 import json
 import requests # Use requests for HTTP calls
 from typing import Dict, List, Any, Optional, Union, Tuple
+import re
 
 # No longer using openai library
 # import openai
@@ -322,10 +323,29 @@ IMPORTANT TIME CONTEXT: {date_reminder}
                 # Sometimes models still wrap in ```json ... ``` despite instructions
                 if response_text.startswith("```json"):
                     response_text = response_text.split("```json", 1)[1]
+                elif response_text.startswith("```"):
+                    response_text = response_text.split("```", 1)[1]
                 if response_text.endswith("```"):
                     response_text = response_text.rsplit("```", 1)[0]
                 
-                return json.loads(response_text.strip())
+                # Clean up potential trailing or incomplete JSON fragments
+                response_text = response_text.strip()
+                
+                # Fix common JSON formatting errors
+                # 1. Fix dangling comma before closing brace/bracket
+                response_text = re.sub(r',(\s*[\}\]])', r'\1', response_text)
+                
+                # 2. Fix missing comma between elements
+                response_text = re.sub(r'(\}|\])(\s*)(\{|\[)', r'\1,\2\3', response_text)
+                
+                # 3. Fix truncated JSON by trying to find the last complete object/array
+                if not response_text.endswith('}') and not response_text.endswith(']'):
+                    last_closing_brace = response_text.rfind('}')
+                    if last_closing_brace > 0:
+                        response_text = response_text[:last_closing_brace+1]
+                
+                logger.debug(f"Cleaned JSON response: {response_text[:100]}...")
+                return json.loads(response_text)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse Ollama JSON response: {str(e)}", raw_response=response_text)
                 return {}

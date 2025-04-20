@@ -154,8 +154,24 @@ class Planner:
             f"2. All necessary parameters for that action (as a valid JSON object, use an empty object {{}} if no parameters are needed)\n"
             f"3. Detailed reasoning explaining your strategic thinking for this step\n\n"
             
-            f"Return the plan as a valid JSON object with a 'steps' array where each step has "
-            f"'action', 'parameters', and 'reasoning' fields. Ensure all 'parameters' values are valid JSON objects."
+            f"Return the plan as a valid JSON object with the following structure:\n"
+            f"```json\n"
+            f"{{\n"
+            f"  \"steps\": [\n"
+            f"    {{\n"
+            f"      \"action\": \"search_web\",\n"
+            f"      \"parameters\": {{ \"query\": \"example search\" }},\n"
+            f"      \"reasoning\": \"This search will provide initial information...\"\n"
+            f"    }},\n"
+            f"    {{\n"
+            f"      \"action\": \"generate_summary\",\n"
+            f"      \"parameters\": {{}},\n"
+            f"      \"reasoning\": \"Final step to synthesize findings.\"\n"
+            f"    }}\n"
+            f"  ]\n"
+            f"}}\n"
+            f"```\n\n"
+            f"WARNING: Ensure each step has all three fields properly formatted. Do not include any additional fields or trailing commas. The entire response must be a single valid JSON object."
         )
         
         # User prompt
@@ -165,7 +181,8 @@ class Planner:
             f"Consider what sources would be most authoritative for this topic and how to cross-verify information. "
             f"Break complex aspects into multiple research steps. "
             f"IMPORTANT: After fetching web content, always include an 'analyze_webpage' step to extract key information.\n\n"
-            f"Your response must be a valid JSON object with a 'steps' array. Ensure parameters are always JSON objects, using {{}} for empty parameters."
+            f"Your response MUST be a single valid JSON object with a 'steps' array. Each step MUST have exactly three fields: 'action', 'parameters', and 'reasoning'."
+            f"Ensure parameters are always JSON objects, using {{}} for empty parameters. Do not include trailing commas."
         )
         
         try:

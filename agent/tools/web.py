@@ -291,7 +291,19 @@ class WebScrapingTool:
         """
         # Validate URL
         if not self._validate_url(url):
-            return None
+            logger.warning(f"Domain not allowed: {urllib.parse.urlparse(url).netloc}")
+            return WebPage(
+                url=url,
+                title="Access Error",
+                content="This domain is not in the allowed domains list.",
+                html="",
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                metadata={
+                    "status_code": 403,
+                    "error": "Domain not allowed",
+                    "fetch_success": False
+                }
+            )
             
         # Check cache
         cache_path = self._get_cache_path(url) if use_cache else None
@@ -348,7 +360,19 @@ class WebScrapingTool:
                         time.sleep(2 * retry_count)  # Exponential backoff
                         continue
                     
-                    return None
+                    # Return error page instead of None
+                    return WebPage(
+                        url=url,
+                        title=f"Error {response.status_code}",
+                        content=f"Failed to fetch the webpage. Server returned HTTP {response.status_code}.",
+                        html="",
+                        timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                        metadata={
+                            "status_code": response.status_code,
+                            "fetch_success": False,
+                            "error": f"HTTP {response.status_code}"
+                        }
+                    )
                 
                 # Auto-detect and set correct encoding if possible
                 if 'charset' not in response.headers.get('content-type', '').lower():
@@ -376,7 +400,8 @@ class WebScrapingTool:
                         "status_code": response.status_code,
                         "content_type": response.headers.get("Content-Type"),
                         "content_length": len(response.text),
-                        "final_url": response.url  # In case of redirects
+                        "final_url": response.url,  # In case of redirects
+                        "fetch_success": True
                     }
                 )
                 
@@ -398,13 +423,48 @@ class WebScrapingTool:
                     time.sleep(2 * retry_count)  # Exponential backoff
                     continue
                 
-                return None
+                # Return error page instead of None
+                return WebPage(
+                    url=url,
+                    title="Request Error",
+                    content=f"Failed to fetch the webpage due to a network error: {str(e)}",
+                    html="",
+                    timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                    metadata={
+                        "error": str(e),
+                        "fetch_success": False,
+                        "error_type": type(e).__name__
+                    }
+                )
             except Exception as e:
                 logger.error(f"Unexpected error processing {url}: {str(e)}")
-                return None
+                # Return error page instead of None
+                return WebPage(
+                    url=url,
+                    title="Processing Error",
+                    content=f"Failed to process the webpage due to an error: {str(e)}",
+                    html="",
+                    timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                    metadata={
+                        "error": str(e),
+                        "fetch_success": False,
+                        "error_type": type(e).__name__
+                    }
+                )
         
         logger.error(f"Failed to fetch {url} after {max_retries} retries")
-        return None
+        # Return error page after max retries
+        return WebPage(
+            url=url,
+            title="Max Retries Exceeded",
+            content=f"Failed to fetch the webpage after {max_retries} attempts.",
+            html="",
+            timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+            metadata={
+                "fetch_success": False,
+                "error": f"Max retries ({max_retries}) exceeded"
+            }
+        )
     
     def search_google(self, query: str, num_results: int = 5) -> List[Dict[str, str]]:
         """
@@ -766,11 +826,20 @@ class WebScrapingTool:
             Dictionary with extracted information
         """
         page = self.fetch_page(url)
-        if not page:
+        
+        # Check if the page fetch failed
+        if not page or (page.metadata and not page.metadata.get("fetch_success", False)):
+            error_message = "Failed to fetch webpage"
+            if page and page.metadata and "error" in page.metadata:
+                error_message = page.metadata["error"]
+            
             return {
                 "url": url,
                 "success": False,
-                "error": "Failed to fetch webpage"
+                "error": error_message,
+                "content": page.content if page else None,
+                "title": page.title if page else "Access Error",
+                "fetch_failed": True
             }
         
         try:
@@ -857,5 +926,6 @@ class WebScrapingTool:
                 "url": url,
                 "success": False,
                 "error": str(e),
-                "content": page.content if page else None
+                "content": page.content if page else None,
+                "title": page.title if page else "Analysis Error"
             } 
