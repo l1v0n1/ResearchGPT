@@ -10,7 +10,10 @@ RUN apk add --no-cache \
     openssl-dev \
     bzip2-dev \
     jpeg-dev \
-    zlib-dev
+    zlib-dev \
+    swig \
+    pcre-dev \
+    file-dev
 
 # Copy requirements
 COPY requirements.txt .
