@@ -3,9 +3,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-lightblue.svg)](https://ollama.com/)
-[![Tests](https://github.com/l1v0n1/ResearchGPT/actions/workflows/python-tests.yml/badge.svg)](https://github.com/l1v0n1/ResearchGPT/actions/workflows/python-tests.yml)
-[![Lint](https://github.com/l1v0n1/ResearchGPT/actions/workflows/lint.yml/badge.svg)](https://github.com/l1v0n1/ResearchGPT/actions/workflows/lint.yml)
-[![Docker](https://github.com/l1v0n1/ResearchGPT/actions/workflows/docker-build.yml/badge.svg)](https://github.com/l1v0n1/ResearchGPT/actions/workflows/docker-build.yml)
 
 A powerful AI research assistant that provides comprehensive research summaries by querying internal documents and web resources, powered by local Ollama models. Built for privacy and flexibility with no external API dependencies.
 
