@@ -13,28 +13,14 @@ RUN apk add --no-cache \
     zlib-dev \
     swig \
     pcre-dev \
-    file-dev \
-    openblas-dev \
-    openblas \
-    lapack-dev \
-    g++ \
-    gfortran
+    file-dev
 
-# Copy requirements and wheelhouse directory
+# Copy requirements
 COPY requirements.txt .
-COPY wheelhouse wheelhouse
 
-# Install dependencies - first try to use pre-built wheel for faiss-cpu
+# Install dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    if [ -d "wheelhouse" ] && [ "$(ls -A wheelhouse 2>/dev/null)" ]; then \
-        echo "Using pre-built wheels in wheelhouse" && \
-        pip install --no-cache-dir wheelhouse/*.whl && \
-        grep -v "faiss-cpu" requirements.txt > requirements-without-faiss.txt && \
-        pip install --no-cache-dir -r requirements-without-faiss.txt; \
-    else \
-        echo "Building from source" && \
-        pip install --no-cache-dir -r requirements.txt; \
-    fi
+    pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories first
 RUN mkdir -p data/documents/vector_store data/summaries logs
